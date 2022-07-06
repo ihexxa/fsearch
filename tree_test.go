@@ -4,27 +4,34 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ihexxa/randstr"
 )
 
-func TestTree(t *testing.T) {
-	const pathLen = 8
-	const sampleSize = 128
-	const sep = "/"
+const (
+	pathLen    = 8
+	sampleSize = 128
+	segmentLen = 4
+	sep        = "/"
+)
 
-	randStr := randstr.NewRandStr([]string{}, true, 2)
-	genPaths := func() map[string][]*Node {
-		paths := map[string][]*Node{}
-		for i := 0; i < sampleSize; i++ {
-			parts := []string{}
-			for j := 0; j < pathLen; j++ {
-				parts = append(parts, randStr.Alphabets())
-			}
-			paths[strings.Join(parts, sep)] = []*Node{}
+var randStr = randstr.NewRandStr([]string{}, true, segmentLen)
+
+func genPaths() map[string][]*Node {
+	paths := map[string][]*Node{}
+	for i := 0; i < sampleSize; i++ {
+		parts := []string{}
+		for j := 0; j < pathLen; j++ {
+			parts = append(parts, randStr.Alphabets())
 		}
-		return paths
+		paths[strings.Join(parts, sep)] = []*Node{}
 	}
+	return paths
+}
+
+func TestTree(t *testing.T) {
+	randStr.Seed(time.Now().UnixNano())
 
 	t.Run("AddPath/DelPath/GetPath test", func(t *testing.T) {
 		tree := NewTree(sep)

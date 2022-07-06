@@ -8,6 +8,8 @@ import (
 	qradix "github.com/ihexxa/q-radix/v3"
 )
 
+var ErrStopped = errors.New("fsearch is stopped")
+
 type FSearch struct {
 	radix       *qradix.RTree
 	tree        *Tree
@@ -15,28 +17,36 @@ type FSearch struct {
 	idsToDelete chan int64
 	on          bool
 	lock        *sync.RWMutex
+	resultLimit int
 }
 
-func New(pathSeparator string) *FSearch {
+func New(pathSeparator string, limit int) *FSearch {
 	fs := &FSearch{
-		on:    true,
-		radix: qradix.NewRTree(),
-		tree:  NewTree(pathSeparator),
-		nodes: map[int64]*Node{},
-		lock:  &sync.RWMutex{},
+		on:          true,
+		radix:       qradix.NewRTree(),
+		tree:        NewTree(pathSeparator),
+		idsToDelete: make(chan int64, 1024),
+		nodes:       map[int64]*Node{},
+		lock:        &sync.RWMutex{},
+		resultLimit: limit,
 	}
 	go fs.purgeNodes()
 
 	return fs
 }
 
+// purgeNodes is a daemon which receives targetNodeId and deletes the node and all its sub nodes.
 func (fs *FSearch) purgeNodes() {
 	var targetNodeId int64
-	for fs.on {
+	worker := func() {
 		targetNodeId = <-fs.idsToDelete
+
+		fs.lock.Lock()
+		defer fs.lock.Unlock()
+
 		node, ok := fs.nodes[targetNodeId]
 		if !ok {
-			continue
+			return
 		}
 
 		queue := []*Node{node}
@@ -55,8 +65,14 @@ func (fs *FSearch) purgeNodes() {
 			delete(fs.nodes, nodeId)
 		}
 	}
+
+	for fs.on {
+		worker()
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
+// Stop stops FSearch and it blocks until all deleting operations are applied
 func (fs *FSearch) Stop() {
 	fs.on = false
 	for {
@@ -68,7 +84,14 @@ func (fs *FSearch) Stop() {
 	}
 }
 
+// AddPath add pathname to the FSearch index
 func (fs *FSearch) AddPath(pathname string) error {
+	if !fs.on {
+		return ErrStopped
+	}
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
+
 	nodes, err := fs.tree.AddPath(pathname)
 	if err != nil {
 		return err
@@ -102,7 +125,15 @@ func (fs *FSearch) AddPath(pathname string) error {
 	return nil
 }
 
+// DelPath deletes pathname asynchronously
+// NOTE: the pathname is not deleted immediately, the index is eventual consistent.
 func (fs *FSearch) DelPath(pathname string) error {
+	if !fs.on {
+		return ErrStopped
+	}
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
+
 	deleteNode, err := fs.tree.DelPath(pathname)
 	if err != nil {
 		return err
@@ -112,43 +143,84 @@ func (fs *FSearch) DelPath(pathname string) error {
 	return nil
 }
 
+// MovePath move the pathname under dstParentPath
 func (fs *FSearch) MovePath(pathname, dstParentPath string) error {
+	if !fs.on {
+		return ErrStopped
+	}
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
+
 	return fs.tree.MovePath(pathname, dstParentPath)
 }
 
+// Search searches keyword in the FSearch
+// It returns pahtnames which contains keyword, the result size is limited by the resultLimit
 func (fs *FSearch) Search(keyword string) ([]string, error) {
-	_, nodeIdsVal, ok := fs.radix.GetBestMatch(keyword)
-	if !ok {
-		return nil, nil
+	if !fs.on {
+		return nil, ErrStopped
 	}
+	fs.lock.RLock()
+	defer fs.lock.RUnlock()
 
+	segmentToIds := fs.radix.GetLongerMatches(keyword, fs.resultLimit)
+
+	var ok bool
 	var err error
 	var node *Node
 	var pathname string
 	results := []string{}
-	nodeIds := nodeIdsVal.([]int64)
-	for _, nodeId := range nodeIds {
-		node, ok = fs.nodes[nodeId]
-		if !ok {
-			// TODO: delete the nodeId in the trie
-			continue
+	for segment, idsVal := range segmentToIds {
+		nodeIds := idsVal.([]int64)
+		validIds := []int64{}
+		for _, nodeId := range nodeIds {
+			node, ok = fs.nodes[nodeId]
+			if !ok {
+				continue
+			} else {
+				validIds = append(validIds, nodeId)
+			}
+
+			pathname, err = fs.tree.GetPath(node)
+			if err != nil {
+				return nil, err
+			}
+			results = append(results, pathname)
 		}
 
-		pathname, err = fs.tree.GetPath(node)
-		if err != nil {
-			return nil, err
+		if len(validIds) < len(nodeIds) {
+			_, err = fs.radix.Insert(segment, validIds)
+			if err != nil {
+				return nil, err
+			}
 		}
-		results = append(results, pathname)
+		if len(results) >= fs.resultLimit {
+			break
+		}
 	}
 
 	return results, nil
 }
 
+// Marshal serializes FSearch index into string rows
 func (fs *FSearch) Marshal() chan string {
-	// TODO: check tree.Err()
+	// TODO: snapshot the tree to reduce unavailable time
+	fs.lock.RLock()
+	defer fs.lock.RUnlock()
+
 	return fs.tree.Marshal()
 }
 
+// Marshal deserializes string rows and restore the FSearch index
 func (fs *FSearch) Unmarshal(rows chan string) {
+	// TODO: add nodes, add tries
 	fs.tree.Unmarshal(rows)
+}
+
+func (fs *FSearch) Error() error {
+	return fs.tree.Err()
+}
+
+func (fs *FSearch) String() string {
+	return fs.tree.String()
 }

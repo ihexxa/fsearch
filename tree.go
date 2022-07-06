@@ -3,6 +3,7 @@ package fsearch
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -147,7 +148,7 @@ func (t *Tree) MovePath(pathname, dstParentPath string) error {
 		if !ok {
 			return ErrNotFound
 		}
-		if i == len(parts)-1 {
+		if i == len(dstParts)-1 {
 			child.children[itemName] = targetNode
 			targetNode.parent = child
 			break
@@ -168,6 +169,7 @@ func (t *Tree) GetPath(targetNode *Node) (string, error) {
 	}
 
 	if parts[len(parts)-1] != "" {
+		// the path is already deleted so it can not reach to root
 		return "", ErrNotFound
 	}
 	parts = parts[:len(parts)-1]
@@ -272,4 +274,26 @@ func (t *Tree) Err() error {
 	err := t.err
 	t.err = nil
 	return err
+}
+
+func (t *Tree) String() string {
+	result := ""
+	queue := []*Node{t.root}
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+
+		if node != nil {
+			result += fmt.Sprintln("node not found")
+			continue
+		}
+
+		result += fmt.Sprintf("id(%d) name(%s) parent(%d)\n", node.id, node.name, node.parent.id)
+		for _, child := range node.children {
+			queue = append(queue, child)
+			result += fmt.Sprintf("\tid(%d) name(%s)\n", node.id, node.name)
+		}
+	}
+
+	return result
 }
