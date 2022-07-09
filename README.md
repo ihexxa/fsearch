@@ -1,8 +1,15 @@
 # Fsearch
-_An in-memory index which finds a keyword in millions of pathnames within microseconds._
+_An in-memory index which finds a keyword in millions of pathnames within milliseconds._
+
+<a href="https://github.com/ihexxa/fsearch/actions">
+    <img src="https://github.com/ihexxa/fsearch/workflows/ci-fsearch/badge.svg" />
+</a>
+<a href="https://goreportcard.com/report/github.com/ihexxa/fsearch">
+    <img src="https://goreportcard.com/badge/github.com/ihexxa/fsearch" />
+</a>
 
 ## Features
-- Fast: search a keyword in millions of directories in microseconds (see benchmark).
+- Fast: search a keyword in millions of directories within milliseconds (see benchmark).
 - Compact: indexing 1M pathnames with around 500MB memory.
 - Simple: less than 5 APIs
 
