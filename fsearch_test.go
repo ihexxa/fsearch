@@ -1,6 +1,7 @@
 package fsearch
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -15,12 +16,12 @@ func TestFSearch(t *testing.T) {
 	seed := time.Now().UnixNano()
 	fmt.Printf("seed: %d\n", seed)
 	keywordRandStr.Seed(seed)
-	const resultSize = 10
+	const resultSize = 1000000000
 
 	t.Run("test Search", func(t *testing.T) {
 		fs := New("/", resultSize)
 
-		paths := genPaths()
+		paths := genPaths(128)
 		var err error
 		for pathname := range paths {
 			err = fs.AddPath(pathname)
@@ -222,4 +223,136 @@ func TestFSearch(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("AddPath/DelPath random test", func(t *testing.T) {
+		fs := New("/", resultSize)
+		paths := genPaths(128)
+
+		var err error
+		for pathname := range paths {
+			err = fs.AddPath(pathname)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		checkPaths(t, paths, fs, true)
+
+		for pathname := range paths {
+			parts := strings.Split(pathname, "/")
+			for i := len(parts) - 1; i >= 0; i-- {
+				prefix := strings.Join(parts[:i+1], "/")
+				err = fs.DelPath(prefix)
+				if err != nil {
+					// TODO: check not found, since some path share prefix
+					t.Fatal(err)
+				}
+			}
+		}
+
+		checkPaths(t, paths, fs, false)
+	})
+
+	t.Run("AddPath/MovePath random test", func(t *testing.T) {
+		fs := New("/", resultSize)
+		paths := genPaths(128)
+
+		var err error
+		for pathname := range paths {
+			err = fs.AddPath(pathname)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		newRoot := "000"
+		err = fs.AddPath(newRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		checkPaths(t, paths, fs, true)
+
+		for pathname := range paths {
+			// only move pathname's base to newRoot
+			parts := strings.Split(pathname, "/")
+			err := fs.MovePath(parts[0], newRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		movedPaths := map[string][]*Node{}
+		for pathname := range paths {
+			movedPaths[fmt.Sprintf("%s/%s", newRoot, pathname)] = nil
+		}
+
+		checkPaths(t, movedPaths, fs, true)
+		checkPaths(t, paths, fs, false)
+	})
+}
+
+func checkPaths(t *testing.T, pathnames map[string][]*Node, fs *FSearch, shouldExist bool) {
+	hasPath := func(keyword, expectedPath string, fs *FSearch) (bool, error) {
+		pathnames, err := fs.Search(keyword)
+		if err != nil {
+			return false, err
+		}
+		found := false
+		for _, pathname := range pathnames {
+			if pathname == expectedPath {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return false, nil
+		}
+		return true, nil
+	}
+
+	for pathname := range pathnames {
+		parts := strings.Split(pathname, "/")
+		for i, part := range parts {
+			matchedPrefix := strings.Join(parts[:i+1], "/")
+
+			runes := []rune(part)
+			for j := 0; j < len(runes); j++ {
+				keywordSuffix := string(runes[j:])
+				keywordPrefix := string(runes[:j+1])
+
+				ok1, err1 := hasPath(keywordSuffix, matchedPrefix, fs)
+				ok2, err2 := hasPath(keywordPrefix, matchedPrefix, fs)
+				if shouldExist {
+					if err1 != nil {
+						t.Fatal(err1)
+					}
+					if !ok1 {
+						t.Fatalf("path(%s) not found for keywordSuffix(%s)", matchedPrefix, keywordSuffix)
+					}
+					if err2 != nil {
+						t.Fatal(err2)
+					}
+					if !ok2 {
+						t.Fatalf("path(%s) not found for keywordPrefix(%s)", matchedPrefix, keywordPrefix)
+					}
+
+				} else {
+					if err1 != nil && !errors.Is(err1, ErrNotFound) {
+						t.Fatal(err1)
+					}
+					if ok1 {
+						t.Fatalf("path(%s) should not be found for keywordSuffix(%s)", matchedPrefix, keywordSuffix)
+					}
+					if err2 != nil && !errors.Is(err2, ErrNotFound) {
+						t.Fatal(err2)
+					}
+					if ok2 {
+						t.Fatalf("path(%s) should not be found for keywordPrefix(%s)", matchedPrefix, keywordPrefix)
+					}
+				}
+			}
+		}
+	}
 }

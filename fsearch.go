@@ -25,7 +25,7 @@ func New(pathSeparator string, limit int) *FSearch {
 		on:          true,
 		radix:       qradix.NewRTree(),
 		tree:        NewTree(pathSeparator),
-		idsToDelete: make(chan int64, 1024),
+		idsToDelete: make(chan int64, 10240),
 		nodes:       map[int64]*Node{},
 		lock:        &sync.RWMutex{},
 		resultLimit: limit,
@@ -67,8 +67,11 @@ func (fs *FSearch) purgeNodes() {
 	}
 
 	for fs.on {
-		worker()
-		time.Sleep(200 * time.Millisecond)
+		if len(fs.idsToDelete) > 0 {
+			worker()
+		} else {
+			time.Sleep(200 * time.Millisecond)
+		}
 	}
 }
 
@@ -189,12 +192,16 @@ func (fs *FSearch) Search(keyword string) ([]string, error) {
 		}
 
 		if len(validIds) < len(nodeIds) {
-			_, err = fs.radix.Insert(segment, validIds)
-			if err != nil {
-				return nil, err
+			if len(validIds) == 0 {
+				fs.radix.Remove(segment)
+			} else {
+				_, err = fs.radix.Insert(segment, validIds)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
-		if len(results) >= fs.resultLimit {
+		if fs.resultLimit != 0 && len(results) >= fs.resultLimit {
 			break
 		}
 	}

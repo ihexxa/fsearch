@@ -10,15 +10,15 @@ import (
 )
 
 const (
-	pathLen    = 8
-	sampleSize = 128
-	segmentLen = 4
 	sep        = "/"
+	pathLen    = 5
+	sampleSize = 10
+	segmentLen = 4
 )
 
 var randStr = randstr.NewRandStr([]string{}, true, segmentLen)
 
-func genPaths() map[string][]*Node {
+func genPaths(sampleSize int) map[string][]*Node {
 	paths := map[string][]*Node{}
 	for i := 0; i < sampleSize; i++ {
 		parts := []string{}
@@ -33,9 +33,9 @@ func genPaths() map[string][]*Node {
 func TestTree(t *testing.T) {
 	randStr.Seed(time.Now().UnixNano())
 
-	t.Run("AddPath/DelPath/GetPath test", func(t *testing.T) {
+	t.Run("AddPath/DelPath/GetPath basic test", func(t *testing.T) {
 		tree := NewTree(sep)
-		paths := genPaths()
+		paths := genPaths(sampleSize)
 
 		for pathname := range paths {
 			createdNodes, err := tree.AddPath(pathname)
@@ -78,12 +78,11 @@ func TestTree(t *testing.T) {
 				}
 			}
 		}
-
 	})
 
 	t.Run("marshal/unmarshal test", func(t *testing.T) {
 		tree1 := NewTree(sep)
-		paths := genPaths()
+		paths := genPaths(sampleSize)
 
 		for pathname := range paths {
 			createdNodes, err := tree1.AddPath(pathname)
