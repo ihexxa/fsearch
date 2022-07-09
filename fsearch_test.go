@@ -134,7 +134,7 @@ func TestFSearch(t *testing.T) {
 				if len(fs.idsToDelete) == 0 {
 					break
 				}
-				fmt.Printf("wating for drain: %d\n", len(fs.idsToDelete))
+				fmt.Printf("waiting for drain: %d\n", len(fs.idsToDelete))
 				time.Sleep(500 * time.Millisecond)
 			}
 

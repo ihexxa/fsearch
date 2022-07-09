@@ -20,6 +20,9 @@ type FSearch struct {
 	resultLimit int
 }
 
+// New creates a new Fsearch
+// pathSeparator is the path separator in the path
+// limit is the upper bound of matched results size, 0 means unlimited (not recommended).
 func New(pathSeparator string, limit int) *FSearch {
 	fs := &FSearch{
 		on:          true,
