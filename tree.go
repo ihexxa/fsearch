@@ -107,6 +107,40 @@ func (t *Tree) DelPath(pathname string) (*Node, error) {
 	return deletedNode, nil
 }
 
+// Rename rename the file/folder name
+func (t *Tree) Rename(pathname, newName string) (*Node, error) {
+	if strings.Contains(newName, t.PathSeparator) {
+		return nil, ErrInvalidPath
+	}
+	pathname = filepath.Clean(pathname)
+	parts := strings.Split(pathname, t.PathSeparator)
+	if len(parts) == 0 {
+		return nil, ErrInvalidPath
+	}
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	parent := t.root
+	var renamedNode *Node
+	for i, part := range parts {
+		child, ok := parent.children[part]
+		fmt.Println("rename", parent.name, part, ok)
+		if !ok {
+			return nil, ErrNotFound
+		}
+		if i == len(parts)-1 {
+			renamedNode = child
+			child.name = newName
+			delete(parent.children, part)
+			parent.children[newName] = child
+			break
+		}
+		parent = child
+	}
+
+	return renamedNode, nil
+}
+
 // MovePath moves pathname under dstParentPath
 func (t *Tree) MovePath(pathname, dstParentPath string) error {
 	pathname = filepath.Clean(pathname)
@@ -283,15 +317,15 @@ func (t *Tree) String() string {
 		node := queue[0]
 		queue = queue[1:]
 
-		if node != nil {
+		if node == nil {
 			result += fmt.Sprintln("node not found")
 			continue
 		}
 
-		result += fmt.Sprintf("id(%d) name(%s) parent(%d)\n", node.id, node.name, node.parent.id)
-		for _, child := range node.children {
+		result += fmt.Sprintf("id(%d) name(%s)\n", node.id, node.name)
+		for key, child := range node.children {
 			queue = append(queue, child)
-			result += fmt.Sprintf("\tid(%d) name(%s)\n", node.id, node.name)
+			result += fmt.Sprintf("\tchild key(%s): id(%d) name(%s)\n", key, child.id, child.name)
 		}
 	}
 

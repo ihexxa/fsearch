@@ -1,5 +1,5 @@
 # Fsearch
-_An in-memory index which finds a keyword in millions of pathnames within milliseconds._
+_An in-memory index which finds a keyword from millions of pathnames within milliseconds._
 
 <a href="https://github.com/ihexxa/fsearch/actions">
     <img src="https://github.com/ihexxa/fsearch/workflows/ci-fsearch/badge.svg" />
@@ -9,29 +9,60 @@ _An in-memory index which finds a keyword in millions of pathnames within millis
 </a>
 
 ## Features
-- Fast: search a keyword in millions of directories within milliseconds (see benchmark).
+- Fast: search a keyword from millions of directories within milliseconds (see benchmark).
 - Compact: indexing 1M pathnames with around 500MB memory.
-- Simple: less than 5 APIs
+- Serializable: the index can be serialized and persisted.
+- Simple: AddPath, DelPath, MovePath, Rename and so on.
 
 ## Examples
 ```golang
-const maxResultSize = 50 // the upper bound of matched results size
-const pathSeparator = "/"
-fs := New(pathSeparator, maxResultSize)
+import (
+	"fmt"
+	"testing"
+)
 
-// add paths
-path1 := "a/keyword/c"
-path2 := "a/b/keyword"
-_ := fs.AddPath(path1)
-_ := fs.AddPath(path2)
+func TestFSearchExample(t *testing.T) {
+	t.Run("test example", func(t *testing.T) {
+		const maxResultSize = 50 // the upper bound of matched results size
+		const pathSeparator = "/"
+		fs := New(pathSeparator, maxResultSize)
 
-// search for a key word
-matchedPaths, _ := fs.Search("keyword") // matchedPaths should contain both path1 and path2
+		// add paths
+		path1 := "a/keyword/c"
+		path2 := "a/b/keyword"
+		err := fs.AddPath(path1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = fs.AddPath(path2)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-// delete paths
-_ := fs.DelPath(path1)
-_ := fs.DelPath(path2)
+		// search for a key word
+		matchedPaths, err := fs.Search("keyword") // matchedPaths should contain both path1 and path2
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Printf("%+v", matchedPaths)
 
-// move a path
-_ := fs.MovePath("a", "a/b/keyword") // "a", "a/keyword", "a/keyword/c" will be under path2
+		// move a path
+		err = fs.MovePath("a/keyword", "a/b/keyword") // "a/keyword", "a/keyword/c" will be under path2
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// rename a path
+		err = fs.RenamePath("a/b/keyword", "keyword2") // entry "a/b/keyword" is renamed to "a/b/keyword2"
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// delete paths
+		err = fs.DelPath("a/b/keyworde")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
 ```
