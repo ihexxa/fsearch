@@ -7,6 +7,9 @@ _An in-memory index which finds a keyword from millions of pathnames within mill
 <a href="https://goreportcard.com/report/github.com/ihexxa/fsearch">
     <img src="https://goreportcard.com/badge/github.com/ihexxa/fsearch" />
 </a>
+<a href="https://pkg.go.dev/github.com/ihexxa/fsearch" title="doc">
+    <img src="https://pkg.go.dev/badge/github.com/ihexxa/fsearch" />
+</a>
 
 ## Features
 - Fast: search a keyword from millions of directories within milliseconds (see benchmark).
