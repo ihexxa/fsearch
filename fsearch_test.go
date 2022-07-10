@@ -11,12 +11,21 @@ import (
 	"github.com/ihexxa/randstr"
 )
 
-func TestFSearch(t *testing.T) {
-	keywordRandStr := randstr.NewRandStr([]string{}, true, 2)
-	seed := time.Now().UnixNano()
+var (
+	keywordRandStr *randstr.RandStr
+	seed           int64
+)
+
+const resultSize = 1000000000
+
+func init() {
+	seed = time.Now().UnixNano()
 	fmt.Printf("seed: %d\n", seed)
 	keywordRandStr.Seed(seed)
-	const resultSize = 1000000000
+}
+
+func TestFSearchOperations(t *testing.T) {
+	keywordRandStr := randstr.NewRandStr([]string{}, true, 2)
 
 	t.Run("test Search", func(t *testing.T) {
 		fs := New("/", resultSize)
@@ -224,6 +233,70 @@ func TestFSearch(t *testing.T) {
 		}
 	})
 
+	t.Run("AddPath/Rename: rename segments test", func(t *testing.T) {
+		fs := New("/", resultSize)
+		newPathSeg := "renamed"
+
+		for _, pathname := range []string{
+			"a/b/c",
+		} {
+			err := fs.AddPath(pathname)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			parts := strings.Split(pathname, "/")
+			renamedPrefixParts := []string{}
+			for i, part := range parts {
+				oldPrefixParts := append(renamedPrefixParts, part)
+				oldPrefix := strings.Join(oldPrefixParts, "/")
+
+				fmt.Println(oldPrefix, newPathSeg)
+				fmt.Println(fs.tree.String())
+				err := fs.RenamePath(oldPrefix, newPathSeg)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				oldPath := strings.Join(parts[:i+1], "/")
+				newPath := strings.Join(append(append(renamedPrefixParts, newPathSeg), parts[i+1:]...), "/")
+				fmt.Println("check", oldPath, newPath)
+				checkPaths(t, map[string][]*Node{oldPath: nil}, fs, false)
+				checkPaths(t, map[string][]*Node{newPath: nil}, fs, true)
+
+				renamedPrefixParts = append(renamedPrefixParts, newPathSeg)
+			}
+		}
+	})
+}
+
+func TestFSearchPersistency(t *testing.T) {
+	t.Run("test persistency", func(t *testing.T) {
+		fs := New("/", resultSize)
+		paths := genPaths(128)
+
+		expectedPaths := map[string][]*Node{}
+		for pathname := range paths {
+			err := fs.AddPath(pathname)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expectedPaths[pathname] = nil
+		}
+
+		rowsChan := fs.Marshal()
+
+		fs2 := New("/", resultSize)
+		err := fs2.Unmarshal(rowsChan)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		checkPaths(t, expectedPaths, fs2, true)
+	})
+}
+
+func TestFSearchRandom(t *testing.T) {
 	t.Run("AddPath/DelPath random test", func(t *testing.T) {
 		fs := New("/", resultSize)
 		paths := genPaths(128)
@@ -289,6 +362,39 @@ func TestFSearch(t *testing.T) {
 
 		checkPaths(t, movedPaths, fs, true)
 		checkPaths(t, paths, fs, false)
+	})
+
+	t.Run("AddPath/Rename: rename root random test", func(t *testing.T) {
+		fs := New("/", resultSize)
+		paths := genPaths(128)
+
+		oldRoot := "000"
+		newRootName := "111"
+		var err error
+		for pathname := range paths {
+			originalPath := fmt.Sprintf("%s/%s", oldRoot, pathname)
+			err = fs.AddPath(originalPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		err = fs.RenamePath(oldRoot, newRootName)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		originalPaths := map[string][]*Node{}
+		renamedPaths := map[string][]*Node{}
+		for pathname := range paths {
+			originalPath := fmt.Sprintf("%s/%s", oldRoot, pathname)
+			renamedPath := fmt.Sprintf("%s/%s", newRootName, pathname)
+			originalPaths[originalPath] = nil
+			renamedPaths[renamedPath] = nil
+		}
+
+		checkPaths(t, originalPaths, fs, false)
+		checkPaths(t, renamedPaths, fs, true)
 	})
 }
 

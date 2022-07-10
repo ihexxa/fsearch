@@ -2,6 +2,8 @@ package fsearch
 
 import (
 	"errors"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -160,6 +162,81 @@ func (fs *FSearch) MovePath(pathname, dstParentPath string) error {
 	return fs.tree.MovePath(pathname, dstParentPath)
 }
 
+// Rename renames the file/folder name
+func (fs *FSearch) RenamePath(pathname, newName string) error {
+	if !fs.on {
+		return ErrStopped
+	}
+	fs.lock.Lock()
+	defer fs.lock.Unlock()
+
+	if strings.Contains(newName, fs.tree.PathSeparator) {
+		return ErrInvalidPath
+	}
+
+	originalName := filepath.Base(pathname)
+	if len(originalName) == 0 {
+		return ErrInvalidPath
+	}
+
+	renamedNode, err := fs.tree.Rename(pathname, newName)
+	if err != nil {
+		return err
+	}
+
+	var keyword string
+	var nodeIdsVal interface{}
+	runes := []rune(originalName)
+	for i := 0; i < len(runes); i++ {
+		keyword = string(runes[i:])
+		nodeIdsVal, err = fs.radix.Get(keyword)
+		nodeIds := nodeIdsVal.([]int64)
+
+		if err != nil {
+			if errors.Is(err, qradix.ErrNotExist) {
+				continue
+			} else {
+				return err
+			}
+		}
+
+		for i, nodeId := range nodeIds {
+			if nodeId == renamedNode.id {
+				nodeIdsVal, err = fs.radix.Insert(keyword, append(nodeIds[:i], nodeIds[i+1:]...))
+				if err != nil {
+					// TODO: although it is impossible reach here
+					// better to add a checking in searching side since not all keys are removed
+					return err
+				}
+				break
+			}
+		}
+	}
+
+	runes = []rune(newName)
+	for i := 0; i < len(runes); i++ {
+		keyword = string(runes[i:])
+		nodeIdsVal, err = fs.radix.Get(keyword)
+		if err != nil {
+			if errors.Is(err, qradix.ErrNotExist) {
+				nodeIdsVal = []int64{}
+			} else {
+				return err
+			}
+		}
+
+		nodeIds := nodeIdsVal.([]int64)
+		_, err = fs.radix.Insert(keyword, append(nodeIds, renamedNode.id))
+		if err != nil {
+			// TODO: although it is impossible reach here
+			// better to add a checking in searching side since not all keys are removed
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Search searches keyword in the FSearch
 // It returns pahtnames which contains keyword, the result size is limited by the resultLimit
 func (fs *FSearch) Search(keyword string) ([]string, error) {
@@ -222,9 +299,45 @@ func (fs *FSearch) Marshal() chan string {
 }
 
 // Marshal deserializes string rows and restore the FSearch index
-func (fs *FSearch) Unmarshal(rows chan string) {
-	// TODO: add nodes, add tries
+func (fs *FSearch) Unmarshal(rows chan string) error {
 	fs.tree.Unmarshal(rows)
+
+	var keyword string
+	var err error
+	var nodeIdsVal interface{}
+	queue := []*Node{fs.tree.root}
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+
+		if node.name != "" {
+			fs.nodes[node.id] = node
+
+			runes := []rune(node.name)
+			for i := 0; i < len(runes); i++ {
+				keyword = string(runes[i:])
+				nodeIdsVal, err = fs.radix.Get(keyword)
+				if err != nil {
+					if errors.Is(err, qradix.ErrNotExist) {
+						nodeIdsVal = []int64{}
+					} else {
+						return err
+					}
+				}
+				nodeIds := nodeIdsVal.([]int64)
+				_, err = fs.radix.Insert(keyword, append(nodeIds, node.id))
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		for _, child := range node.children {
+			queue = append(queue, child)
+		}
+	}
+
+	return nil
 }
 
 func (fs *FSearch) Error() error {
