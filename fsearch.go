@@ -234,16 +234,6 @@ func (fs *FSearch) RenamePath(pathname, newName string) error {
 		}
 	}
 
-	// 	nodeIds := nodeIdsVal.([]int64)
-	// 	_, err = fs.radix.Insert(keyword, append(nodeIds, node.id))
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
-
-	// for _,
-	// originalName
-
 	return nil
 }
 
@@ -312,7 +302,6 @@ func (fs *FSearch) Marshal() chan string {
 func (fs *FSearch) Unmarshal(rows chan string) error {
 	fs.tree.Unmarshal(rows)
 
-	// TODO: restore the radix and nodes?
 	var keyword string
 	var err error
 	var nodeIdsVal interface{}

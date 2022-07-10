@@ -271,8 +271,6 @@ func TestFSearchOperations(t *testing.T) {
 }
 
 func TestFSearchPersistency(t *testing.T) {
-	// keywordRandStr := randstr.NewRandStr([]string{}, true, 2)
-
 	t.Run("test persistency", func(t *testing.T) {
 		fs := New("/", resultSize)
 		paths := genPaths(128)
