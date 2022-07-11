@@ -142,12 +142,41 @@ func (fs *FSearch) DelPath(pathname string) error {
 	fs.lock.Lock()
 	defer fs.lock.Unlock()
 
-	deleteNode, err := fs.tree.DelPath(pathname)
+	deletedNode, err := fs.tree.DelPath(pathname)
 	if err != nil {
 		return err
 	}
 
-	fs.idsToDelete <- deleteNode.id
+	parts := strings.Split(pathname, fs.tree.PathSeparator)
+	for _, part := range parts {
+		runes := []rune(part)
+		for i := 0; i < len(runes); i++ {
+			suffix := string(runes[i:])
+			idsVal, err := fs.radix.Get(suffix)
+			if err != nil {
+				if errors.Is(err, qradix.ErrNotExist) {
+					continue
+				}
+			}
+			ids := idsVal.([]int64)
+			for i, id := range ids {
+				if id == deletedNode.id {
+					if len(ids) == 1 {
+						fs.radix.Remove(suffix)
+					} else {
+						ids[i], ids[len(ids)-1] = ids[len(ids)-1], ids[i]
+						_, err := fs.radix.Insert(suffix, ids[:len(ids)-1])
+						if err != nil {
+							return err
+						}
+					}
+					break
+				}
+			}
+		}
+	}
+
+	fs.idsToDelete <- deletedNode.id
 	return nil
 }
 
