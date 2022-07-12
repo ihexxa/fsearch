@@ -105,28 +105,11 @@ func (fs *FSearch) AddPath(pathname string) error {
 		return err
 	}
 
-	var keyword string
-	var nodeIdsVal interface{}
 	for _, node := range nodes {
 		fs.nodes[node.id] = node
-		runes := []rune(node.name)
-
-		for i := 0; i < len(runes); i++ {
-			keyword = string(runes[i:])
-			nodeIdsVal, err = fs.radix.Get(keyword)
-			if err != nil {
-				if errors.Is(err, qradix.ErrNotExist) {
-					nodeIdsVal = []int64{}
-				} else {
-					return err
-				}
-			}
-
-			nodeIds := nodeIdsVal.([]int64)
-			_, err = fs.radix.Insert(keyword, append(nodeIds, node.id))
-			if err != nil {
-				return err
-			}
+		err = fs.insertNodeIdToRadix(node.name, node.id)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -149,30 +132,9 @@ func (fs *FSearch) DelPath(pathname string) error {
 
 	parts := strings.Split(pathname, fs.tree.PathSeparator)
 	for _, part := range parts {
-		runes := []rune(part)
-		for i := 0; i < len(runes); i++ {
-			suffix := string(runes[i:])
-			idsVal, err := fs.radix.Get(suffix)
-			if err != nil {
-				if errors.Is(err, qradix.ErrNotExist) {
-					continue
-				}
-			}
-			ids := idsVal.([]int64)
-			for i, id := range ids {
-				if id == deletedNode.id {
-					if len(ids) == 1 {
-						fs.radix.Remove(suffix)
-					} else {
-						ids[i], ids[len(ids)-1] = ids[len(ids)-1], ids[i]
-						_, err := fs.radix.Insert(suffix, ids[:len(ids)-1])
-						if err != nil {
-							return err
-						}
-					}
-					break
-				}
-			}
+		err = fs.deleteNodeIdFromRadix(part, deletedNode.id)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -189,6 +151,72 @@ func (fs *FSearch) MovePath(pathname, dstParentPath string) error {
 	defer fs.lock.Unlock()
 
 	return fs.tree.MovePath(pathname, dstParentPath)
+}
+
+func (fs *FSearch) insertNodeIdToRadix(keyword string, nodeId int64) error {
+	var err error
+	var suffix string
+	var nodeIdsVal interface{}
+
+	runes := []rune(keyword)
+	for i := 0; i < len(runes); i++ {
+		suffix = string(runes[i:])
+		nodeIdsVal, err = fs.radix.Get(suffix)
+		if err != nil {
+			if errors.Is(err, qradix.ErrNotExist) {
+				nodeIdsVal = []int64{}
+			} else {
+				return err
+			}
+		}
+
+		nodeIds := nodeIdsVal.([]int64)
+		_, err = fs.radix.Insert(suffix, append(nodeIds, nodeId))
+		if err != nil {
+			// TODO: although it is impossible reach here
+			// better to add a checking in searching side since not all keys are removed
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (fs *FSearch) deleteNodeIdFromRadix(keyword string, nodeId int64) error {
+	var err error
+	var suffix string
+	var nodeIdsVal interface{}
+
+	runes := []rune(keyword)
+	for i := 0; i < len(runes); i++ {
+		suffix = string(runes[i:])
+		nodeIdsVal, err = fs.radix.Get(suffix)
+		if err != nil {
+			if errors.Is(err, qradix.ErrNotExist) {
+				continue
+			} else {
+				return err
+			}
+		}
+
+		ids := nodeIdsVal.([]int64)
+		for i, id := range ids {
+			if id == nodeId {
+				if len(ids) == 1 {
+					fs.radix.Remove(suffix)
+				} else {
+					ids[i], ids[len(ids)-1] = ids[len(ids)-1], ids[i]
+					_, err := fs.radix.Insert(suffix, ids[:len(ids)-1])
+					if err != nil {
+						return err
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return nil
 }
 
 // Rename renames the file/folder name
@@ -213,57 +241,11 @@ func (fs *FSearch) RenamePath(pathname, newName string) error {
 		return err
 	}
 
-	var keyword string
-	var nodeIdsVal interface{}
-	runes := []rune(originalName)
-	for i := 0; i < len(runes); i++ {
-		keyword = string(runes[i:])
-		nodeIdsVal, err = fs.radix.Get(keyword)
-		nodeIds := nodeIdsVal.([]int64)
-
-		if err != nil {
-			if errors.Is(err, qradix.ErrNotExist) {
-				continue
-			} else {
-				return err
-			}
-		}
-
-		for i, nodeId := range nodeIds {
-			if nodeId == renamedNode.id {
-				nodeIdsVal, err = fs.radix.Insert(keyword, append(nodeIds[:i], nodeIds[i+1:]...))
-				if err != nil {
-					// TODO: although it is impossible reach here
-					// better to add a checking in searching side since not all keys are removed
-					return err
-				}
-				break
-			}
-		}
+	err = fs.deleteNodeIdFromRadix(originalName, renamedNode.id)
+	if err != nil {
+		return err
 	}
-
-	runes = []rune(newName)
-	for i := 0; i < len(runes); i++ {
-		keyword = string(runes[i:])
-		nodeIdsVal, err = fs.radix.Get(keyword)
-		if err != nil {
-			if errors.Is(err, qradix.ErrNotExist) {
-				nodeIdsVal = []int64{}
-			} else {
-				return err
-			}
-		}
-
-		nodeIds := nodeIdsVal.([]int64)
-		_, err = fs.radix.Insert(keyword, append(nodeIds, renamedNode.id))
-		if err != nil {
-			// TODO: although it is impossible reach here
-			// better to add a checking in searching side since not all keys are removed
-			return err
-		}
-	}
-
-	return nil
+	return fs.insertNodeIdToRadix(newName, renamedNode.id)
 }
 
 // Search searches keyword in the FSearch
